@@ -40,14 +40,7 @@ export async function POST(request) {
       metric1_coach: 'A one-sentence tip starting with "Next time:" on how to better explain the fix',
       metric2_coach: 'A one-sentence tip starting with "Next time:" on how to make the entry more self-contained',
     },
-    learning: {
-      metric1: { key: 'insight_depth', label: 'Insight depth', coach_key: 'insight_coach' },
-      metric2: { key: 'specificity', label: 'Specificity', coach_key: 'specificity_coach' },
-      metric1_desc: 'Is this a genuine new insight or just restating what happened? (1=restatement, 10=real insight)',
-      metric2_desc: 'Is it specific enough to be useful later? (1=very vague, 10=concrete and actionable)',
-      metric1_coach: 'A one-sentence tip starting with "Next time:" on how to deepen the insight',
-      metric2_coach: 'A one-sentence tip starting with "Next time:" on how to be more specific',
-    },
+
   }
 
   const guide = scoringGuide[entry_type] || scoringGuide.decision

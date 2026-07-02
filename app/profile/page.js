@@ -121,7 +121,7 @@ export default function ProfilePage() {
     struggle: { bg: 'bg-red-950', border: 'border-red-800', text: 'text-red-400', badge: 'bg-red-900 text-red-300', bar: 'bg-red-500', coach: 'text-red-300' },
     decision: { bg: 'bg-blue-950', border: 'border-blue-800', text: 'text-blue-400', badge: 'bg-blue-900 text-blue-300', bar: 'bg-blue-500', coach: 'text-blue-300' },
     solved: { bg: 'bg-emerald-950', border: 'border-emerald-800', text: 'text-emerald-400', badge: 'bg-emerald-900 text-emerald-300', bar: 'bg-emerald-500', coach: 'text-emerald-300' },
-    learning: { bg: 'bg-purple-950', border: 'border-purple-800', text: 'text-purple-400', badge: 'bg-purple-900 text-purple-300', bar: 'bg-purple-500', coach: 'text-purple-300' },
+    
   }
 
   function ScoreBar({ label, value, coachTip, barColor, coachColor }) {
@@ -190,7 +190,7 @@ export default function ProfilePage() {
             {showForm && (
               <div className="bg-gray-900 border border-gray-700 rounded-lg p-5 mb-6">
                 <div className="flex gap-2 mb-4 flex-wrap">
-                  {['decision', 'struggle', 'solved', 'learning'].map(type => (
+                  {['decision', 'struggle', 'solved'].map(type => (
                     <button key={type} onClick={() => setForm(f => ({ ...f, entry_type: type }))}
                       className={'px-3 py-1 rounded-full text-xs font-medium border transition-colors ' + (form.entry_type === type ? typeConfig[type].badge + ' ' + typeConfig[type].border : 'border-gray-700 text-gray-500 hover:border-gray-500')}>
                       {type}
