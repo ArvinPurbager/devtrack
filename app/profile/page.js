@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
+import { Light as SyntaxHighlighter } from 'react-syntax-highlighter'
+import { atomOneDark } from 'react-syntax-highlighter/dist/esm/styles/hljs'
 
 export default function ProfilePage() {
   const supabase = createClient()
@@ -17,11 +19,14 @@ export default function ProfilePage() {
   const [loadingCommits, setLoadingCommits] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [showCode, setShowCode] = useState(false)
   const [form, setForm] = useState({
     entry_type: 'decision',
     content: '',
     linked_commit_sha: '',
     is_retrospective: false,
+    code_snippet: '',
+    code_language: 'javascript',
   })
 
   useEffect(() => {
@@ -60,11 +65,13 @@ export default function ProfilePage() {
 
     const { data: inserted, error } = await supabase.from('build_logs').insert({
       user_id: user.id,
-      repo_name: selectedRepo.full_name,
+      repo_name: selectedRepo?.full_name || 'no-repo',
       entry_type: form.entry_type,
       content: form.content,
       linked_commit_sha: form.linked_commit_sha || null,
       is_retrospective: form.is_retrospective,
+      code_snippet: form.code_snippet || null,
+      code_language: form.code_snippet ? form.code_language : null,
     }).select().single()
 
     if (!error && inserted) {
@@ -85,11 +92,12 @@ export default function ProfilePage() {
       const { data } = await supabase
         .from('build_logs')
         .select('*')
-        .eq('repo_name', selectedRepo.full_name)
+        .eq('repo_name', selectedRepo?.full_name || 'no-repo')
         .order('created_at', { ascending: false })
       setLogs(data || [])
-      setForm({ entry_type: 'decision', content: '', linked_commit_sha: '', is_retrospective: false })
+      setForm({ entry_type: 'decision', content: '', linked_commit_sha: '', is_retrospective: false, code_snippet: '', code_language: 'javascript' })
       setShowForm(false)
+      setShowCode(false)
     }
     setSubmitting(false)
   }
@@ -121,8 +129,9 @@ export default function ProfilePage() {
     struggle: { bg: 'bg-red-950', border: 'border-red-800', text: 'text-red-400', badge: 'bg-red-900 text-red-300', bar: 'bg-red-500', coach: 'text-red-300' },
     decision: { bg: 'bg-blue-950', border: 'border-blue-800', text: 'text-blue-400', badge: 'bg-blue-900 text-blue-300', bar: 'bg-blue-500', coach: 'text-blue-300' },
     solved: { bg: 'bg-emerald-950', border: 'border-emerald-800', text: 'text-emerald-400', badge: 'bg-emerald-900 text-emerald-300', bar: 'bg-emerald-500', coach: 'text-emerald-300' },
-    
   }
+
+  const languages = ['javascript', 'python', 'typescript', 'java', 'cpp', 'css', 'html', 'sql', 'bash', 'json', 'rust', 'go']
 
   function ScoreBar({ label, value, coachTip, barColor, coachColor }) {
     return (
@@ -134,9 +143,7 @@ export default function ProfilePage() {
         <div className="h-1 rounded-full bg-white bg-opacity-10 mb-1.5">
           <div className={'h-1 rounded-full transition-all ' + barColor} style={{ width: (value * 10) + '%' }} />
         </div>
-        {coachTip && (
-          <p className={'text-xs opacity-70 ' + coachColor}>{coachTip}</p>
-        )}
+        {coachTip && <p className={'text-xs opacity-70 ' + coachColor}>{coachTip}</p>}
       </div>
     )
   }
@@ -177,123 +184,155 @@ export default function ProfilePage() {
           )}
         </div>
 
-        {selectedRepo && (
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-sm font-medium text-gray-400 uppercase tracking-widest">Timeline - {selectedRepo.name}</h2>
-              <button onClick={() => setShowForm(!showForm)}
-                className="text-sm bg-emerald-700 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg transition-colors">
-                {showForm ? 'Cancel' : '+ Log entry'}
-              </button>
-            </div>
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-medium text-gray-400 uppercase tracking-widest">
+              {selectedRepo ? 'Timeline - ' + selectedRepo.name : 'Build Log'}
+            </h2>
+            <button onClick={() => setShowForm(!showForm)}
+              className="text-sm bg-emerald-700 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg transition-colors">
+              {showForm ? 'Cancel' : '+ Log entry'}
+            </button>
+          </div>
 
-            {showForm && (
-              <div className="bg-gray-900 border border-gray-700 rounded-lg p-5 mb-6">
-                <div className="flex gap-2 mb-4 flex-wrap">
-                  {['decision', 'struggle', 'solved'].map(type => (
-                    <button key={type} onClick={() => setForm(f => ({ ...f, entry_type: type }))}
-                      className={'px-3 py-1 rounded-full text-xs font-medium border transition-colors ' + (form.entry_type === type ? typeConfig[type].badge + ' ' + typeConfig[type].border : 'border-gray-700 text-gray-500 hover:border-gray-500')}>
-                      {type}
-                    </button>
-                  ))}
-                </div>
-                <textarea
-                  value={form.content}
-                  onChange={e => setForm(f => ({ ...f, content: e.target.value }))}
-                  placeholder="What happened? What did you decide, struggle with, solve, or learn?"
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-sm text-white placeholder-gray-500 resize-none focus:outline-none focus:border-gray-500"
-                  rows={4}
-                />
-                <div className="flex items-center gap-4 mt-3 flex-wrap">
-                  <input
-                    value={form.linked_commit_sha}
-                    onChange={e => setForm(f => ({ ...f, linked_commit_sha: e.target.value }))}
-                    placeholder="Link a commit SHA (optional)"
-                    className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white placeholder-gray-500 font-mono focus:outline-none focus:border-gray-500 flex-1 min-w-0"
-                  />
-                  <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer">
-                    <input type="checkbox" checked={form.is_retrospective}
-                      onChange={e => setForm(f => ({ ...f, is_retrospective: e.target.checked }))}
-                      className="accent-emerald-500" />
-                    Logging from memory
-                  </label>
-                  <button onClick={handleSubmit} disabled={submitting || !form.content.trim()}
-                    className="bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm transition-colors">
-                    {submitting ? 'Saving...' : 'Save entry'}
+          {showForm && (
+            <div className="bg-gray-900 border border-gray-700 rounded-xl p-5 mb-6">
+              <div className="flex gap-2 mb-4 flex-wrap">
+                {['decision', 'struggle', 'solved'].map(type => (
+                  <button key={type} onClick={() => setForm(f => ({ ...f, entry_type: type }))}
+                    className={'px-3 py-1 rounded-full text-xs font-medium border transition-colors ' + (form.entry_type === type ? typeConfig[type].badge + ' ' + typeConfig[type].border : 'border-gray-700 text-gray-500 hover:border-gray-500')}>
+                    {type}
                   </button>
-                </div>
-              </div>
-            )}
-
-            {loadingCommits ? (
-              <p className="text-gray-500 text-sm">Loading timeline...</p>
-            ) : (
-              <div className="space-y-8">
-                {groupByWeek(commits, logs).map(([weekStart, { commits: wCommits, logs: wLogs }]) => (
-                  <div key={weekStart}>
-                    <div className="text-xs text-gray-500 uppercase tracking-widest mb-3">
-                      Week of {new Date(weekStart).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                    </div>
-                    <div className="space-y-2 border-l border-gray-800 pl-4">
-                      {wCommits.map(commit => (
-                        <div key={commit.sha} className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-3">
-                          <div className="flex items-start justify-between gap-4">
-                            <p className="text-sm text-white leading-snug">{commit.message}</p>
-                            <a href={commit.url} target="_blank" rel="noopener noreferrer" className="text-xs text-gray-600 hover:text-gray-400 font-mono shrink-0">{commit.sha}</a>
-                          </div>
-                          <p className="text-xs text-gray-500 mt-2">{new Date(commit.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
-                        </div>
-                      ))}
-                      {wLogs.map(log => {
-                        const cfg = typeConfig[log.entry_type] || typeConfig.decision
-                        const s = log.ai_scores
-                        const m1key = s?._metric1_key
-                        const m2key = s?._metric2_key
-                        const m1coach = s?._metric1_coach_key
-                        const m2coach = s?._metric2_coach_key
-                        return (
-                          <div key={log.id} className={'border rounded-xl px-4 py-4 ' + cfg.bg + ' ' + cfg.border}>
-                            <div className="flex items-center gap-2 mb-3">
-                              <span className={'text-xs font-semibold uppercase tracking-widest px-2 py-0.5 rounded-full ' + cfg.badge}>{log.entry_type}</span>
-                              {log.is_retrospective && <span className={'text-xs opacity-50 ' + cfg.text}>(from memory)</span>}
-                              {log.linked_commit_sha && <span className={'text-xs font-mono opacity-50 ' + cfg.text}>#{log.linked_commit_sha.slice(0, 7)}</span>}
-                            </div>
-
-                            <p className={'text-sm leading-relaxed mb-4 ' + cfg.text}>{log.content}</p>
-
-                            {s && m1key && m2key ? (
-                              <div className="rounded-lg p-3 bg-black bg-opacity-20 border border-white border-opacity-5 space-y-4">
-                                <div className="flex gap-6">
-                                  <ScoreBar
-                                    label={s._metric1_label}
-                                    value={s[m1key]}
-                                    coachTip={m1coach ? s[m1coach] : null}
-                                    barColor={cfg.bar}
-                                    coachColor={cfg.coach}
-                                  />
-                                  <ScoreBar
-                                    label={s._metric2_label}
-                                    value={s[m2key]}
-                                    coachTip={m2coach ? s[m2coach] : null}
-                                    barColor={cfg.bar}
-                                    coachColor={cfg.coach}
-                                  />
-                                </div>
-                                <p className={'text-xs italic opacity-50 pt-1 border-t border-white border-opacity-5 ' + cfg.text}>"{s.one_line_insight}"</p>
-                              </div>
-                            ) : (
-                              <div className="text-xs opacity-30 italic">Analyzing...</div>
-                            )}
-
-                            <p className={'text-xs opacity-40 mt-3 ' + cfg.text}>{new Date(log.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
                 ))}
               </div>
-            )}
+
+              <textarea
+                value={form.content}
+                onChange={e => setForm(f => ({ ...f, content: e.target.value }))}
+                placeholder="What happened? What did you decide, struggle with, or solve?"
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-sm text-white placeholder-gray-500 resize-none focus:outline-none focus:border-gray-500 mb-3"
+                rows={3}
+              />
+
+              <button onClick={() => setShowCode(!showCode)}
+                className="text-xs text-gray-400 hover:text-white border border-gray-700 hover:border-gray-500 px-3 py-1.5 rounded-lg transition-colors mb-3">
+                {showCode ? 'Remove code block' : '+ Add code block'}
+              </button>
+
+              {showCode && (
+                <div className="mb-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <select
+                      value={form.code_language}
+                      onChange={e => setForm(f => ({ ...f, code_language: e.target.value }))}
+                      className="bg-gray-800 border border-gray-700 text-gray-300 text-xs rounded px-2 py-1 focus:outline-none">
+                      {languages.map(l => <option key={l} value={l}>{l}</option>)}
+                    </select>
+                    <span className="text-xs text-gray-500">Select language</span>
+                  </div>
+                  <textarea
+                    value={form.code_snippet}
+                    onChange={e => setForm(f => ({ ...f, code_snippet: e.target.value }))}
+                    placeholder="Paste your code here..."
+                    className="w-full bg-gray-950 border border-gray-700 rounded-lg px-4 py-3 text-sm text-green-400 placeholder-gray-600 resize-none focus:outline-none focus:border-gray-500 font-mono"
+                    rows={8}
+                  />
+                </div>
+              )}
+
+              <div className="flex items-center gap-4 flex-wrap">
+                <input
+                  value={form.linked_commit_sha}
+                  onChange={e => setForm(f => ({ ...f, linked_commit_sha: e.target.value }))}
+                  placeholder="Link a commit SHA (optional)"
+                  className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white placeholder-gray-500 font-mono focus:outline-none focus:border-gray-500 flex-1 min-w-0"
+                />
+                <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer">
+                  <input type="checkbox" checked={form.is_retrospective}
+                    onChange={e => setForm(f => ({ ...f, is_retrospective: e.target.checked }))}
+                    className="accent-emerald-500" />
+                  From memory
+                </label>
+                <button onClick={handleSubmit} disabled={submitting || !form.content.trim()}
+                  className="bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm transition-colors">
+                  {submitting ? 'Saving...' : 'Save entry'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {loadingCommits ? (
+          <p className="text-gray-500 text-sm">Loading timeline...</p>
+        ) : (
+          <div className="space-y-8">
+            {groupByWeek(commits, logs).map(([weekStart, { commits: wCommits, logs: wLogs }]) => (
+              <div key={weekStart}>
+                <div className="text-xs text-gray-500 uppercase tracking-widest mb-3">
+                  Week of {new Date(weekStart).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                </div>
+                <div className="space-y-2 border-l border-gray-800 pl-4">
+                  {wCommits.map(commit => (
+                    <div key={commit.sha} className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-3">
+                      <div className="flex items-start justify-between gap-4">
+                        <p className="text-sm text-white leading-snug">{commit.message}</p>
+                        <a href={commit.url} target="_blank" rel="noopener noreferrer" className="text-xs text-gray-600 hover:text-gray-400 font-mono shrink-0">{commit.sha}</a>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-2">{new Date(commit.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                    </div>
+                  ))}
+                  {wLogs.map(log => {
+                    const cfg = typeConfig[log.entry_type] || typeConfig.decision
+                    const s = log.ai_scores
+                    const m1key = s?._metric1_key
+                    const m2key = s?._metric2_key
+                    const m1coach = s?._metric1_coach_key
+                    const m2coach = s?._metric2_coach_key
+                    return (
+                      <div key={log.id} className={'border rounded-xl px-4 py-4 ' + cfg.bg + ' ' + cfg.border}>
+                        <div className="flex items-center gap-2 mb-3">
+                          <span className={'text-xs font-semibold uppercase tracking-widest px-2 py-0.5 rounded-full ' + cfg.badge}>{log.entry_type}</span>
+                          {log.is_retrospective && <span className={'text-xs opacity-50 ' + cfg.text}>(from memory)</span>}
+                          {log.linked_commit_sha && <span className={'text-xs font-mono opacity-50 ' + cfg.text}>#{log.linked_commit_sha.slice(0, 7)}</span>}
+                          {log.code_snippet && <span className={'text-xs opacity-50 ' + cfg.text}>+ code</span>}
+                        </div>
+
+                        {log.code_snippet && (
+                          <div className="mb-4 rounded-lg overflow-hidden border border-gray-700">
+                            <div className="flex items-center justify-between px-3 py-1.5 bg-gray-900 border-b border-gray-700">
+                              <span className="text-xs text-gray-400 font-mono">{log.code_language || 'code'}</span>
+                            </div>
+                            <SyntaxHighlighter
+                              language={log.code_language || 'javascript'}
+                              style={atomOneDark}
+                              customStyle={{ margin: 0, padding: '12px', fontSize: '12px', background: '#0d0d0d', maxHeight: '300px', overflowY: 'auto' }}
+                            >
+                              {log.code_snippet}
+                            </SyntaxHighlighter>
+                          </div>
+                        )}
+
+                        <p className={'text-sm leading-relaxed mb-4 ' + cfg.text}>{log.content}</p>
+
+                        {s && m1key && m2key ? (
+                          <div className="rounded-lg p-3 bg-black bg-opacity-20 border border-white border-opacity-5 space-y-4">
+                            <div className="flex gap-6">
+                              <ScoreBar label={s._metric1_label} value={s[m1key]} coachTip={m1coach ? s[m1coach] : null} barColor={cfg.bar} coachColor={cfg.coach} />
+                              <ScoreBar label={s._metric2_label} value={s[m2key]} coachTip={m2coach ? s[m2coach] : null} barColor={cfg.bar} coachColor={cfg.coach} />
+                            </div>
+                            <p className={'text-xs italic opacity-50 pt-1 border-t border-white border-opacity-5 ' + cfg.text}>"{s.one_line_insight}"</p>
+                          </div>
+                        ) : (
+                          <div className="text-xs opacity-30 italic">Analyzing...</div>
+                        )}
+
+                        <p className={'text-xs opacity-40 mt-3 ' + cfg.text}>{new Date(log.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
         )}
 
