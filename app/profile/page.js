@@ -5,6 +5,10 @@ import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 import { Light as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { atomOneDark } from 'react-syntax-highlighter/dist/esm/styles/hljs'
+import CodeRunner from '@/app/components/CodeRunner'
+import VoiceInput from '@/app/components/VoiceInput'
+import WeeklyRecap from '@/app/components/WeeklyRecap'
+import ProgressRow from '@/app/components/ProgressRow'
 
 export default function ProfilePage() {
   const supabase = createClient()
@@ -15,6 +19,8 @@ export default function ProfilePage() {
   const [selectedRepo, setSelectedRepo] = useState(null)
   const [commits, setCommits] = useState([])
   const [logs, setLogs] = useState([])
+  const [allLogs, setAllLogs] = useState([])
+  const [authType, setAuthType] = useState(null)
   const [loadingRepos, setLoadingRepos] = useState(true)
   const [loadingCommits, setLoadingCommits] = useState(false)
   const [showForm, setShowForm] = useState(false)
@@ -37,10 +43,43 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (!user) return
+    supabase
+      .from('profiles')
+      .select('auth_type')
+      .eq('user_id', user.id)
+      .maybeSingle()
+      .then(({ data }) => setAuthType(data?.auth_type || 'github'))
+  }, [user])
+
+  useEffect(() => {
+    if (!user) return
+    if (authType && authType !== 'github') { setLoadingRepos(false); return }
+    if (!authType) return
     fetch('/api/github/repos')
       .then(res => res.json())
       .then(data => { setRepos(data.repos || []); setLoadingRepos(false) })
+  }, [user, authType])
+
+  useEffect(() => {
+    if (!user) return
+    supabase
+      .from('build_logs')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .then(({ data }) => setAllLogs(data || []))
   }, [user])
+
+  useEffect(() => {
+    if (!user || selectedRepo) return
+    supabase
+      .from('build_logs')
+      .select('*')
+      .eq('repo_name', 'no-repo')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .then(({ data }) => setLogs(data || []))
+  }, [user, selectedRepo])
 
   function handleRepoClick(repo) {
     setSelectedRepo(repo)
@@ -55,8 +94,44 @@ export default function ProfilePage() {
       .from('build_logs')
       .select('*')
       .eq('repo_name', repo.full_name)
+      .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .then(({ data }) => setLogs(data || []))
+  }
+
+  async function scoreEntry(logId, content, entryType) {
+    setLogs(prev => prev.map(l => l.id === logId ? { ...l, _scoring: true, _scoringFailed: false } : l))
+    try {
+      const res = await fetch('/api/ai/score', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ log_id: logId, content, entry_type: entryType }),
+      })
+      if (!res.ok) throw new Error('Scoring request failed')
+      const { scores } = await res.json()
+      if (!scores) throw new Error('No scores returned')
+      setLogs(prev => prev.map(l => l.id === logId ? { ...l, ai_scores: scores, _scoringFailed: false, _scoring: false } : l))
+    } catch (e) {
+      setLogs(prev => prev.map(l => l.id === logId ? { ...l, _scoringFailed: true, _scoring: false } : l))
+    }
+  }
+
+  async function handleDelete(logId) {
+    const confirmed = window.confirm('Delete this entry? This cannot be undone.')
+    if (!confirmed) return
+
+    const { error } = await supabase
+      .from('build_logs')
+      .delete()
+      .eq('id', logId)
+      .eq('user_id', user.id)
+
+    if (!error) {
+      setLogs(prev => prev.filter(l => l.id !== logId))
+      setAllLogs(prev => prev.filter(l => l.id !== logId))
+    } else {
+      window.alert('Could not delete the entry. Please try again.')
+    }
   }
 
   async function handleSubmit() {
@@ -75,26 +150,18 @@ export default function ProfilePage() {
     }).select().single()
 
     if (!error && inserted) {
-      fetch('/api/ai/score', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          log_id: inserted.id,
-          content: inserted.content,
-          entry_type: inserted.entry_type,
-        }),
-      }).then(res => res.json()).then(({ scores }) => {
-        if (scores) {
-          setLogs(prev => prev.map(l => l.id === inserted.id ? { ...l, ai_scores: scores } : l))
-        }
-      })
+      if (inserted.entry_type !== 'progress') {
+        scoreEntry(inserted.id, inserted.content, inserted.entry_type)
+      }
 
       const { data } = await supabase
         .from('build_logs')
         .select('*')
         .eq('repo_name', selectedRepo?.full_name || 'no-repo')
+        .eq('user_id', user.id)
         .order('created_at', { ascending: false })
-      setLogs(data || [])
+      setLogs((data || []).map(l => (l.id === inserted.id && l.entry_type !== 'progress') ? { ...l, _scoring: true } : l))
+      setAllLogs(prev => [{ ...inserted }, ...prev])
       setForm({ entry_type: 'decision', content: '', linked_commit_sha: '', is_retrospective: false, code_snippet: '', code_language: 'javascript' })
       setShowForm(false)
       setShowCode(false)
@@ -167,6 +234,10 @@ export default function ProfilePage() {
           </form>
         </div>
 
+        <WeeklyRecap logs={allLogs} />
+
+
+        {authType === 'github' && (
         <div className="mb-10">
           <h2 className="text-sm font-medium text-gray-400 uppercase tracking-widest mb-4">Your Repositories</h2>
           {loadingRepos ? (
@@ -183,6 +254,7 @@ export default function ProfilePage() {
             </div>
           )}
         </div>
+        )}
 
         <div className="mb-6">
           <div className="flex items-center justify-between mb-4">
@@ -198,21 +270,18 @@ export default function ProfilePage() {
           {showForm && (
             <div className="bg-gray-900 border border-gray-700 rounded-xl p-5 mb-6">
               <div className="flex gap-2 mb-4 flex-wrap">
-                {['decision', 'struggle', 'solved'].map(type => (
-                  <button key={type} onClick={() => setForm(f => ({ ...f, entry_type: type }))}
-                    className={'px-3 py-1 rounded-full text-xs font-medium border transition-colors ' + (form.entry_type === type ? typeConfig[type].badge + ' ' + typeConfig[type].border : 'border-gray-700 text-gray-500 hover:border-gray-500')}>
-                    {type}
-                  </button>
-                ))}
+                {['decision', 'struggle', 'solved', 'progress'].map(type => {
+                  const activeStyle = typeConfig[type]
+                    ? typeConfig[type].badge + ' ' + typeConfig[type].border
+                    : 'bg-gray-800 text-gray-300 border-gray-600'
+                  return (
+                    <button key={type} onClick={() => setForm(f => ({ ...f, entry_type: type }))}
+                      className={'px-3 py-1 rounded-full text-xs font-medium border transition-colors ' + (form.entry_type === type ? activeStyle : 'border-gray-700 text-gray-500 hover:border-gray-500')}>
+                      {type}
+                    </button>
+                  )
+                })}
               </div>
-
-              <textarea
-                value={form.content}
-                onChange={e => setForm(f => ({ ...f, content: e.target.value }))}
-                placeholder="What happened? What did you decide, struggle with, or solve?"
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-sm text-white placeholder-gray-500 resize-none focus:outline-none focus:border-gray-500 mb-3"
-                rows={3}
-              />
 
               <button onClick={() => setShowCode(!showCode)}
                 className="text-xs text-gray-400 hover:text-white border border-gray-700 hover:border-gray-500 px-3 py-1.5 rounded-lg transition-colors mb-3">
@@ -237,8 +306,22 @@ export default function ProfilePage() {
                     className="w-full bg-gray-950 border border-gray-700 rounded-lg px-4 py-3 text-sm text-green-400 placeholder-gray-600 resize-none focus:outline-none focus:border-gray-500 font-mono"
                     rows={8}
                   />
+                  {form.code_snippet.trim() && (
+                    <CodeRunner code={form.code_snippet} language={form.code_language} />
+                  )}
                 </div>
               )}
+
+              <textarea
+                value={form.content}
+                onChange={e => setForm(f => ({ ...f, content: e.target.value }))}
+                placeholder="What happened? What did you decide, struggle with, or solve?"
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-sm text-white placeholder-gray-500 resize-none focus:outline-none focus:border-gray-500 mb-1"
+                rows={3}
+              />
+              <div className="mb-3">
+                <VoiceInput onTranscript={(text) => setForm(f => ({ ...f, content: (f.content ? f.content + ' ' : '') + text }))} />
+              </div>
 
               <div className="flex items-center gap-4 flex-wrap">
                 <input
@@ -264,6 +347,31 @@ export default function ProfilePage() {
 
         {loadingCommits ? (
           <p className="text-gray-500 text-sm">Loading timeline...</p>
+        ) : logs.length === 0 && commits.length === 0 && !showForm ? (
+          <div className="border border-gray-800 rounded-xl p-8 text-center">
+            <h3 className="text-lg font-medium text-white mb-2">Start your build log</h3>
+            <p className="text-gray-400 text-sm mb-6 max-w-md mx-auto">
+              Document your real thinking as you build. Each entry captures the <span className="text-white">why</span>{' '}behind your work &mdash; the part resumes and commits can&rsquo;t show.
+            </p>
+            <div className="flex flex-wrap gap-3 justify-center mb-6 text-left">
+              <div className="border border-blue-900 bg-blue-950 rounded-lg p-3 w-52">
+                <span className="text-xs font-semibold uppercase tracking-widest text-blue-300">Decision</span>
+                <p className="text-xs text-blue-400 mt-1 opacity-80">A tradeoff you made &mdash; what you chose and why over the alternatives.</p>
+              </div>
+              <div className="border border-red-900 bg-red-950 rounded-lg p-3 w-52">
+                <span className="text-xs font-semibold uppercase tracking-widest text-red-300">Struggle</span>
+                <p className="text-xs text-red-400 mt-1 opacity-80">Something that blocked you &mdash; the root cause and what you tried.</p>
+              </div>
+              <div className="border border-emerald-900 bg-emerald-950 rounded-lg p-3 w-52">
+                <span className="text-xs font-semibold uppercase tracking-widest text-emerald-300">Solved</span>
+                <p className="text-xs text-emerald-400 mt-1 opacity-80">A fix you figured out &mdash; what worked and why it makes sense.</p>
+              </div>
+            </div>
+            <button onClick={() => setShowForm(true)}
+              className="bg-emerald-700 hover:bg-emerald-600 text-white px-5 py-2.5 rounded-lg text-sm transition-colors">
+              Write your first entry
+            </button>
+          </div>
         ) : (
           <div className="space-y-8">
             {groupByWeek(commits, logs).map(([weekStart, { commits: wCommits, logs: wLogs }]) => (
@@ -278,10 +386,25 @@ export default function ProfilePage() {
                         <p className="text-sm text-white leading-snug">{commit.message}</p>
                         <a href={commit.url} target="_blank" rel="noopener noreferrer" className="text-xs text-gray-600 hover:text-gray-400 font-mono shrink-0">{commit.sha}</a>
                       </div>
-                      <p className="text-xs text-gray-500 mt-2">{new Date(commit.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                      <div className="flex items-center justify-between mt-2">
+                        <p className="text-xs text-gray-500">{new Date(commit.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                        <button
+                          onClick={() => {
+                            setForm(f => ({ ...f, linked_commit_sha: commit.sha, is_retrospective: true }))
+                            setShowForm(true)
+                            window.scrollTo({ top: 0, behavior: 'smooth' })
+                          }}
+                          className="text-xs text-gray-500 hover:text-emerald-400 border border-gray-800 hover:border-emerald-700 rounded px-2 py-0.5 transition-colors"
+                        >
+                          + Log this commit
+                        </button>
+                      </div>
                     </div>
                   ))}
                   {wLogs.map(log => {
+                    if (log.entry_type === 'progress') {
+                      return <ProgressRow key={log.id} log={log} onDelete={handleDelete} />
+                    }
                     const cfg = typeConfig[log.entry_type] || typeConfig.decision
                     const s = log.ai_scores
                     const m1key = s?._metric1_key
@@ -309,6 +432,9 @@ export default function ProfilePage() {
                             >
                               {log.code_snippet}
                             </SyntaxHighlighter>
+                            <div className="px-3 pb-3">
+                              <CodeRunner code={log.code_snippet} language={log.code_language} />
+                            </div>
                           </div>
                         )}
 
@@ -322,11 +448,35 @@ export default function ProfilePage() {
                             </div>
                             <p className={'text-xs italic opacity-50 pt-1 border-t border-white border-opacity-5 ' + cfg.text}>"{s.one_line_insight}"</p>
                           </div>
-                        ) : (
+                        ) : log._scoring ? (
                           <div className="text-xs opacity-30 italic">Analyzing...</div>
+                        ) : (
+                          <div className="flex items-center gap-2 text-xs">
+                            <span className="text-red-400 opacity-70">Scoring failed.</span>
+                            <button
+                              onClick={() => scoreEntry(log.id, log.content, log.entry_type)}
+                              className="text-gray-400 hover:text-white underline"
+                            >
+                              Retry
+                            </button>
+                          </div>
                         )}
 
-                        <p className={'text-xs opacity-40 mt-3 ' + cfg.text}>{new Date(log.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                        <div className="flex items-center justify-between mt-3">
+                          <p className={'text-xs opacity-40 ' + cfg.text}>{new Date(log.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                          <button
+                            onClick={() => handleDelete(log.id)}
+                            title="Delete entry"
+                            className="text-gray-600 hover:text-red-400 transition-colors p-1"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="3 6 5 6 21 6" />
+                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                              <line x1="10" y1="11" x2="10" y2="17" />
+                              <line x1="14" y1="11" x2="14" y2="17" />
+                            </svg>
+                          </button>
+                        </div>
                       </div>
                     )
                   })}

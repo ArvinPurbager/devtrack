@@ -1,46 +1,72 @@
-import { createClient } from '@/utils/supabase/server'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { Octokit } from 'octokit'
 import { notFound } from 'next/navigation'
+import CodeBlock from '@/app/components/CodeBlock'
+import ProgressRow from '@/app/components/ProgressRow'
+
+export const revalidate = 60
+
+const AVATAR_COLORS = ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ec4899', '#14b8a6', '#ef4444', '#6366f1']
+function colorForName(name) {
+  let hash = 0
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash)
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length]
+}
 
 export default async function PublicProfilePage({ params }) {
   const { username } = await params
-  const supabase = await createClient()
+  const supabase = createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  )
 
-  const { data: users } = await supabase
-    .from('user_tokens')
-    .select('user_id, github_access_token')
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('user_id, github_username, auth_type')
+    .eq('github_username', username)
+    .single()
 
-  if (!users || users.length === 0) notFound()
+  if (!profile) notFound()
 
-  let matchedUserId = null
-  let matchedToken = null
+  const matchedUserId = profile.user_id
+  const isGithub = (profile.auth_type || 'github') === 'github'
+  const avatarColor = colorForName(username)
+
   let githubProfile = null
+  let repos = []
 
-  for (const row of users) {
+  if (isGithub) {
+    const serviceClient = createSupabaseClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY
+    )
+
+    const { data: tokenRow } = await serviceClient
+      .from('user_tokens')
+      .select('github_access_token')
+      .eq('user_id', matchedUserId)
+      .single()
+
+    if (!tokenRow?.github_access_token) notFound()
+
     try {
-      const octokit = new Octokit({ auth: row.github_access_token })
+      const octokit = new Octokit({ auth: tokenRow.github_access_token })
       const { data: ghUser } = await octokit.rest.users.getAuthenticated()
-      if (ghUser.login.toLowerCase() === username.toLowerCase()) {
-        matchedUserId = row.user_id
-        matchedToken = row.github_access_token
-        githubProfile = ghUser
-        break
-      }
-    } catch (e) { continue }
+      const { data: ghRepos } = await octokit.rest.repos.listForAuthenticatedUser({
+        sort: 'pushed', per_page: 10, visibility: 'public',
+      })
+      githubProfile = ghUser
+      repos = ghRepos
+    } catch (e) {
+      notFound()
+    }
   }
-
-  if (!matchedUserId) notFound()
 
   const { data: logs } = await supabase
     .from('build_logs')
     .select('*')
     .eq('user_id', matchedUserId)
     .order('created_at', { ascending: true })
-
-  const octokit = new Octokit({ auth: matchedToken })
-  const { data: repos } = await octokit.rest.repos.listForAuthenticatedUser({
-    sort: 'pushed', per_page: 10, visibility: 'public',
-  })
 
   const typeConfig = {
     struggle: { bg: 'bg-red-950', border: 'border-red-800', text: 'text-red-400', badge: 'bg-red-900 text-red-300', bar: 'bg-red-500', hex: '#ef4444' },
@@ -53,7 +79,6 @@ export default async function PublicProfilePage({ params }) {
     type, count: logs?.filter(l => l.entry_type === type).length || 0,
   })).filter(t => t.count > 0)
 
-  // Build growth curve data per type
   const growthData = {}
   for (const type of ['decision', 'struggle', 'solved']) {
     const typeLogs = (logs || []).filter(l => l.entry_type === type && l.ai_scores?._metric1_key)
@@ -70,20 +95,30 @@ export default async function PublicProfilePage({ params }) {
   }
 
   const hasGrowthData = Object.keys(growthData).length > 0
+  const displayName = isGithub ? (githubProfile.name || username) : username
 
   return (
     <main className="min-h-screen bg-gray-950 text-white px-4 py-12">
       <div className="max-w-3xl mx-auto">
 
         <div className="flex items-start gap-5 mb-10 pb-10 border-b border-gray-800">
-          <img src={githubProfile.avatar_url} alt={username} className="w-20 h-20 rounded-full" />
+          {isGithub ? (
+            <img src={githubProfile.avatar_url} alt={username} className="w-20 h-20 rounded-full" />
+          ) : (
+            <div
+              className="w-20 h-20 rounded-full flex items-center justify-center text-3xl font-medium text-white shrink-0"
+              style={{ backgroundColor: avatarColor }}
+            >
+              {username.charAt(0).toUpperCase()}
+            </div>
+          )}
           <div className="flex-1">
-            <h1 className="text-2xl font-medium mb-1">{githubProfile.name || username}</h1>
+            <h1 className="text-2xl font-medium mb-1">{displayName}</h1>
             <p className="text-gray-400 text-sm mb-3">@{username}</p>
-            {githubProfile.bio && <p className="text-gray-300 text-sm mb-3">{githubProfile.bio}</p>}
+            {isGithub && githubProfile.bio && <p className="text-gray-300 text-sm mb-3">{githubProfile.bio}</p>}
             <div className="flex gap-4 flex-wrap">
               <span className="text-xs text-gray-500">{entryCount} build log {entryCount === 1 ? 'entry' : 'entries'}</span>
-              <span className="text-xs text-gray-500">{repos?.length || 0} public repos</span>
+              {isGithub && <span className="text-xs text-gray-500">{repos?.length || 0} public repos</span>}
               {typeBreakdown.map(t => (
                 <span key={t.type} className={'text-xs px-2 py-0.5 rounded-full ' + (typeConfig[t.type]?.badge || '')}>
                   {t.count} {t.type}
@@ -91,10 +126,12 @@ export default async function PublicProfilePage({ params }) {
               ))}
             </div>
           </div>
-          <a href={githubProfile.html_url} target="_blank" rel="noopener noreferrer"
-            className="text-xs text-gray-500 hover:text-white border border-gray-700 hover:border-gray-500 px-3 py-1.5 rounded-lg transition-colors shrink-0">
-            GitHub ↗
-          </a>
+          {isGithub && (
+            <a href={githubProfile.html_url} target="_blank" rel="noopener noreferrer"
+              className="text-xs text-gray-500 hover:text-white border border-gray-700 hover:border-gray-500 px-3 py-1.5 rounded-lg transition-colors shrink-0">
+              GitHub ↗
+            </a>
+          )}
         </div>
 
         {hasGrowthData && (
@@ -163,6 +200,9 @@ export default async function PublicProfilePage({ params }) {
           ) : (
             <div className="space-y-4">
               {[...logs].reverse().map(log => {
+                if (log.entry_type === 'progress') {
+                  return <ProgressRow key={log.id} log={log} />
+                }
                 const cfg = typeConfig[log.entry_type] || typeConfig.decision
                 const s = log.ai_scores
                 const m1key = s?._metric1_key
@@ -181,9 +221,7 @@ export default async function PublicProfilePage({ params }) {
                         <div className="px-3 py-1.5 bg-gray-900 border-b border-gray-700">
                           <span className="text-xs text-gray-400 font-mono">{log.code_language || 'code'}</span>
                         </div>
-                        <pre className="text-xs text-green-400 bg-gray-950 p-3 overflow-x-auto font-mono leading-relaxed" style={{ maxHeight: '200px' }}>
-                          {log.code_snippet}
-                        </pre>
+                        <CodeBlock code={log.code_snippet} language={log.code_language} />
                       </div>
                     )}
 
