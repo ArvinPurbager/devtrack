@@ -24,6 +24,8 @@ export default function ProfilePage() {
   const [projects, setProjects] = useState([])
   const [activeProject, setActiveProject] = useState(null)
   const [newProjectName, setNewProjectName] = useState('')
+  const [editingProjectId, setEditingProjectId] = useState(null)
+  const [editingName, setEditingName] = useState('')
   const [showProjectForm, setShowProjectForm] = useState(false)
   const [loadingRepos, setLoadingRepos] = useState(true)
   const [loadingCommits, setLoadingCommits] = useState(false)
@@ -122,6 +124,27 @@ export default function ProfilePage() {
       setLogs(prev => prev.filter(l => l.project_id !== projectId))
       setAllLogs(prev => prev.filter(l => l.project_id !== projectId))
     }
+  }
+
+  function startRename(project) {
+    setEditingProjectId(project.id)
+    setEditingName(project.name)
+  }
+
+  async function handleRenameProject(projectId) {
+    const name = editingName.trim()
+    if (!name) { setEditingProjectId(null); return }
+    const { error } = await supabase
+      .from('projects')
+      .update({ name })
+      .eq('id', projectId)
+      .eq('user_id', user.id)
+    if (!error) {
+      setProjects(prev => prev.map(p => p.id === projectId ? { ...p, name } : p))
+      setActiveProject(cur => (cur?.id === projectId ? { ...cur, name } : cur))
+    }
+    setEditingProjectId(null)
+    setEditingName('')
   }
 
   useEffect(() => {
@@ -339,9 +362,32 @@ export default function ProfilePage() {
                   key={p.id}
                   className={'flex items-center gap-2 px-4 py-2 rounded-lg border text-sm transition-colors ' + (activeProject?.id === p.id ? 'border-emerald-600 bg-emerald-950 text-white' : 'border-gray-800 bg-gray-900 text-gray-300 hover:border-gray-600')}
                 >
-                  <button onClick={() => setActiveProject(p)} className="focus:outline-none">
-                    {p.name}
-                  </button>
+                  {editingProjectId === p.id ? (
+                    <input
+                      autoFocus
+                      value={editingName}
+                      onChange={e => setEditingName(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') handleRenameProject(p.id)
+                        if (e.key === 'Escape') { setEditingProjectId(null); setEditingName('') }
+                      }}
+                      onBlur={() => handleRenameProject(p.id)}
+                      className="bg-gray-800 border border-gray-600 rounded px-2 py-0.5 text-sm text-white focus:outline-none w-32"
+                    />
+                  ) : (
+                    <button onClick={() => setActiveProject(p)} className="focus:outline-none">
+                      {p.name}
+                    </button>
+                  )}
+                  {editingProjectId !== p.id && (
+                    <button
+                      onClick={() => startRename(p)}
+                      title="Rename project"
+                      className="text-gray-500 hover:text-white transition-colors"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" /></svg>
+                    </button>
+                  )}
                   <button
                     onClick={() => handleDeleteProject(p.id, p.name)}
                     title="Delete project"
