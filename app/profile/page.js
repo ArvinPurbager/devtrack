@@ -21,6 +21,10 @@ export default function ProfilePage() {
   const [logs, setLogs] = useState([])
   const [allLogs, setAllLogs] = useState([])
   const [authType, setAuthType] = useState(null)
+  const [projects, setProjects] = useState([])
+  const [activeProject, setActiveProject] = useState(null)
+  const [newProjectName, setNewProjectName] = useState('')
+  const [showProjectForm, setShowProjectForm] = useState(false)
   const [loadingRepos, setLoadingRepos] = useState(true)
   const [loadingCommits, setLoadingCommits] = useState(false)
   const [showForm, setShowForm] = useState(false)
@@ -71,15 +75,66 @@ export default function ProfilePage() {
   }, [user])
 
   useEffect(() => {
+    if (!user) return
+    supabase
+      .from('projects')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: true })
+      .then(({ data }) => {
+        setProjects(data || [])
+        if (data && data.length > 0) setActiveProject(prev => prev || data[0])
+      })
+  }, [user])
+
+  async function handleCreateProject() {
+    const name = newProjectName.trim()
+    if (!name) return
+    const { data, error } = await supabase
+      .from('projects')
+      .insert({ user_id: user.id, name, repo_name: null })
+      .select()
+      .single()
+    if (!error && data) {
+      setProjects(prev => [...prev, data])
+      setActiveProject(data)
+      setNewProjectName('')
+      setShowProjectForm(false)
+    }
+  }
+
+  async function handleDeleteProject(projectId, projectName) {
+    const confirmed = window.confirm(
+      'Delete "' + projectName + '"? This permanently deletes the project AND every entry logged under it. This cannot be undone.'
+    )
+    if (!confirmed) return
+    const { error } = await supabase
+      .from('projects')
+      .delete()
+      .eq('id', projectId)
+      .eq('user_id', user.id)
+    if (!error) {
+      setProjects(prev => {
+        const remaining = prev.filter(p => p.id !== projectId)
+        setActiveProject(cur => (cur?.id === projectId ? (remaining[0] || null) : cur))
+        return remaining
+      })
+      setLogs(prev => prev.filter(l => l.project_id !== projectId))
+      setAllLogs(prev => prev.filter(l => l.project_id !== projectId))
+    }
+  }
+
+  useEffect(() => {
     if (!user || selectedRepo) return
+    if (!activeProject) { setLogs([]); return }
     supabase
       .from('build_logs')
       .select('*')
-      .eq('repo_name', 'no-repo')
+      .eq('project_id', activeProject.id)
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .then(({ data }) => setLogs(data || []))
-  }, [user, selectedRepo])
+  }, [user, selectedRepo, activeProject])
 
   function handleRepoClick(repo) {
     setSelectedRepo(repo)
@@ -90,12 +145,13 @@ export default function ProfilePage() {
     fetch('/api/github/commits?repo=' + repo.full_name)
       .then(res => res.json())
       .then(data => { setCommits(data.commits || []); setLoadingCommits(false) })
-    supabase
+    let q = supabase
       .from('build_logs')
       .select('*')
       .eq('repo_name', repo.full_name)
       .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
+    if (activeProject) q = q.eq('project_id', activeProject.id)
+    q.order('created_at', { ascending: false })
       .then(({ data }) => setLogs(data || []))
   }
 
@@ -136,11 +192,13 @@ export default function ProfilePage() {
 
   async function handleSubmit() {
     if (!form.content.trim()) return
+    if (!activeProject) { window.alert('Select or create a project first.'); return }
     setSubmitting(true)
 
     const { data: inserted, error } = await supabase.from('build_logs').insert({
       user_id: user.id,
       repo_name: selectedRepo?.full_name || 'no-repo',
+      project_id: activeProject?.id || null,
       entry_type: form.entry_type,
       content: form.content,
       linked_commit_sha: form.linked_commit_sha || null,
@@ -154,12 +212,13 @@ export default function ProfilePage() {
         scoreEntry(inserted.id, inserted.content, inserted.entry_type)
       }
 
-      const { data } = await supabase
+      let rq = supabase
         .from('build_logs')
         .select('*')
-        .eq('repo_name', selectedRepo?.full_name || 'no-repo')
         .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
+      if (activeProject) rq = rq.eq('project_id', activeProject.id)
+      else rq = rq.eq('repo_name', selectedRepo?.full_name || 'no-repo')
+      const { data } = await rq.order('created_at', { ascending: false })
       setLogs((data || []).map(l => (l.id === inserted.id && l.entry_type !== 'progress') ? { ...l, _scoring: true } : l))
       setAllLogs(prev => [{ ...inserted }, ...prev])
       setForm({ entry_type: 'decision', content: '', linked_commit_sha: '', is_retrospective: false, code_snippet: '', code_language: 'javascript' })
@@ -242,8 +301,62 @@ export default function ProfilePage() {
 
         <WeeklyRecap logs={allLogs} />
 
+        <div className="mb-10">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-medium text-gray-400 uppercase tracking-widest">Projects</h2>
+            <button
+              onClick={() => setShowProjectForm(!showProjectForm)}
+              className="text-xs text-gray-400 hover:text-white border border-gray-700 hover:border-gray-500 px-3 py-1.5 rounded-lg transition-colors"
+            >
+              {showProjectForm ? 'Cancel' : '+ New project'}
+            </button>
+          </div>
 
-        {authType === 'github' && (
+          {showProjectForm && (
+            <div className="flex gap-2 mb-4">
+              <input
+                value={newProjectName}
+                onChange={e => setNewProjectName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleCreateProject() }}
+                placeholder="Project name (e.g. Calculator App)"
+                className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-gray-500"
+              />
+              <button
+                onClick={handleCreateProject}
+                className="bg-emerald-700 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm transition-colors"
+              >
+                Create
+              </button>
+            </div>
+          )}
+
+          {projects.length === 0 ? (
+            <p className="text-gray-500 text-sm">No projects yet. Create one to start organizing your work.</p>
+          ) : (
+            <div className="flex gap-2 flex-wrap">
+              {projects.map(p => (
+                <div
+                  key={p.id}
+                  className={'flex items-center gap-2 px-4 py-2 rounded-lg border text-sm transition-colors ' + (activeProject?.id === p.id ? 'border-emerald-600 bg-emerald-950 text-white' : 'border-gray-800 bg-gray-900 text-gray-300 hover:border-gray-600')}
+                >
+                  <button onClick={() => setActiveProject(p)} className="focus:outline-none">
+                    {p.name}
+                  </button>
+                  <button
+                    onClick={() => handleDeleteProject(p.id, p.name)}
+                    title="Delete project"
+                    className="text-gray-500 hover:text-red-400 transition-colors"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+
+        {false && authType === 'github' && (
         <div className="mb-10">
           <h2 className="text-sm font-medium text-gray-400 uppercase tracking-widest mb-4">Your Repositories</h2>
           {loadingRepos ? (

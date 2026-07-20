@@ -68,6 +68,18 @@ export default async function PublicProfilePage({ params }) {
     .eq('user_id', matchedUserId)
     .order('created_at', { ascending: true })
 
+  const { data: userProjects } = await supabase
+    .from('projects')
+    .select('*')
+    .eq('user_id', matchedUserId)
+    .order('created_at', { ascending: true })
+
+  // group entries by project, newest first within each project
+  const projectGroups = (userProjects || []).map(proj => ({
+    project: proj,
+    entries: [...(logs || [])].filter(l => l.project_id === proj.id).reverse(),
+  })).filter(g => g.entries.length > 0)
+
   const typeConfig = {
     struggle: { bg: 'bg-red-950', border: 'border-red-800', text: 'text-red-400', badge: 'bg-red-900 text-red-300', bar: 'bg-red-500', hex: '#ef4444' },
     decision: { bg: 'bg-blue-950', border: 'border-blue-800', text: 'text-blue-400', badge: 'bg-blue-900 text-blue-300', bar: 'bg-blue-500', hex: '#3b82f6' },
@@ -136,7 +148,7 @@ export default async function PublicProfilePage({ params }) {
 
         {hasGrowthData && (
           <div className="mb-12">
-            <h2 className="text-sm font-medium text-gray-400 uppercase tracking-widest mb-6">Growth over time</h2>
+            <h2 className="text-lg font-medium text-gray-300 uppercase tracking-widest mb-6">Growth over time</h2>
             <div className="space-y-6">
               {Object.entries(growthData).map(([type, points]) => {
                 const cfg = typeConfig[type]
@@ -194,12 +206,37 @@ export default async function PublicProfilePage({ params }) {
         )}
 
         <div>
-          <h2 className="text-sm font-medium text-gray-400 uppercase tracking-widest mb-6">Build log</h2>
-          {!logs || logs.length === 0 ? (
+          {projectGroups.length > 1 && (
+            <div className="mb-6">
+              <p className="text-lg font-medium text-gray-300 uppercase tracking-widest mb-3">Projects</p>
+              <div className="flex gap-2 flex-wrap">
+                {projectGroups.map(group => (
+                  
+                    <a
+                    key={group.project.id}
+                    href={'#project-' + group.project.id}
+                    className="flex items-center gap-2 text-sm text-gray-300 bg-gray-900 border border-gray-800 hover:border-gray-600 rounded-full px-4 py-2 transition-colors"
+                  >
+                    {group.project.name}
+                    <span className="text-gray-500">{group.entries.length}</span>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+          <h2 className="text-lg font-medium text-gray-300 uppercase tracking-widest mb-6">Build log</h2>
+          {projectGroups.length === 0 ? (
             <p className="text-gray-500 text-sm">No build log entries yet.</p>
           ) : (
-            <div className="space-y-4">
-              {[...logs].reverse().map(log => {
+            <div className="space-y-10">
+              {projectGroups.map(group => (
+                <div key={group.project.id} id={'project-' + group.project.id} className="scroll-mt-6">
+                  <div className="flex items-center gap-2 mb-4">
+                    <h3 className="text-base font-medium text-white">{group.project.name}</h3>
+                    <span className="text-xs text-gray-500">{group.entries.length} {group.entries.length === 1 ? 'entry' : 'entries'}</span>
+                  </div>
+                  <div className="space-y-4">
+              {group.entries.map(log => {
                 if (log.entry_type === 'progress') {
                   return <ProgressRow key={log.id} log={log} />
                 }
@@ -259,6 +296,9 @@ export default async function PublicProfilePage({ params }) {
                   </div>
                 )
               })}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
