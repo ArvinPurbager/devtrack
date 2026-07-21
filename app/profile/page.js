@@ -215,13 +215,30 @@ export default function ProfilePage() {
 
   async function handleSubmit() {
     if (!form.content.trim()) return
-    if (!activeProject) { window.alert('Select or create a project first.'); return }
+    // ensure there's a project to attach to; auto-create one for brand-new users
+    let targetProject = activeProject
+    if (!targetProject) {
+      if (projects.length > 0) {
+        targetProject = projects[0]
+        setActiveProject(targetProject)
+      } else {
+        const { data: created, error: projErr } = await supabase
+          .from('projects')
+          .insert({ user_id: user.id, name: 'My First Project', repo_name: null })
+          .select()
+          .single()
+        if (projErr || !created) { window.alert('Could not create a project. Please try again.'); return }
+        targetProject = created
+        setProjects([created])
+        setActiveProject(created)
+      }
+    }
     setSubmitting(true)
 
     const { data: inserted, error } = await supabase.from('build_logs').insert({
       user_id: user.id,
       repo_name: selectedRepo?.full_name || 'no-repo',
-      project_id: activeProject?.id || null,
+      project_id: targetProject?.id || null,
       entry_type: form.entry_type,
       content: form.content,
       linked_commit_sha: form.linked_commit_sha || null,
