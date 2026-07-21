@@ -21,6 +21,7 @@ export default function ProfilePage() {
   const [logs, setLogs] = useState([])
   const [allLogs, setAllLogs] = useState([])
   const [authType, setAuthType] = useState(null)
+  const [username, setUsername] = useState(null)
   const [projects, setProjects] = useState([])
   const [activeProject, setActiveProject] = useState(null)
   const [newProjectName, setNewProjectName] = useState('')
@@ -51,10 +52,13 @@ export default function ProfilePage() {
     if (!user) return
     supabase
       .from('profiles')
-      .select('auth_type')
+      .select('auth_type, github_username')
       .eq('user_id', user.id)
       .maybeSingle()
-      .then(({ data }) => setAuthType(data?.auth_type || 'github'))
+      .then(({ data }) => {
+        setAuthType(data?.auth_type || 'github')
+        setUsername(data?.github_username || null)
+      })
   }, [user])
 
   useEffect(() => {
@@ -328,12 +332,22 @@ export default function ProfilePage() {
             <h1 className="text-2xl font-medium">{user.user_metadata?.full_name || user.user_metadata?.user_name || 'Developer'}</h1>
             <p className="text-gray-400 text-sm">{user.email}</p>
           </div>
+          {username && (
+              <a
+              href={'/u/' + username}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="ml-auto text-sm text-gray-400 hover:text-white border border-gray-700 hover:border-gray-500 px-3 py-1.5 rounded-lg transition-colors"
+            >
+              View public profile ↗
+            </a>
+          )}
           <button
             onClick={async () => {
               await supabase.auth.signOut()
               window.location.href = '/login'
             }}
-            className="ml-auto text-gray-500 hover:text-white text-sm underline"
+            className="text-gray-500 hover:text-white text-sm underline"
           >
             Sign out
           </button>
