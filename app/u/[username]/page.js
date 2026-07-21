@@ -3,6 +3,7 @@ import { Octokit } from 'octokit'
 import { notFound } from 'next/navigation'
 import CodeBlock from '@/app/components/CodeBlock'
 import ProgressRow from '@/app/components/ProgressRow'
+import OwnerBadge from '@/app/components/OwnerBadge'
 
 export const revalidate = 60
 
@@ -138,12 +139,15 @@ export default async function PublicProfilePage({ params }) {
               ))}
             </div>
           </div>
-          {isGithub && (
-            <a href={githubProfile.html_url} target="_blank" rel="noopener noreferrer"
-              className="text-xs text-gray-500 hover:text-white border border-gray-700 hover:border-gray-500 px-3 py-1.5 rounded-lg transition-colors shrink-0">
-              GitHub ↗
-            </a>
-          )}
+          <div className="flex flex-col items-end gap-2 shrink-0">
+            <OwnerBadge ownerId={matchedUserId} />
+            {isGithub && (
+              <a href={githubProfile.html_url} target="_blank" rel="noopener noreferrer"
+                className="text-xs text-gray-500 hover:text-white border border-gray-700 hover:border-gray-500 px-3 py-1.5 rounded-lg transition-colors">
+                GitHub ↗
+              </a>
+            )}
+          </div>
         </div>
 
         {hasGrowthData && (
