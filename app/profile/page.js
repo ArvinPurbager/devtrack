@@ -310,7 +310,7 @@ export default function ProfilePage() {
           <span className="text-xs opacity-60 truncate pr-2">{label}</span>
           <span className="text-xs font-semibold opacity-90 shrink-0">{value}/10</span>
         </div>
-        <div className="h-1 rounded-full bg-white bg-opacity-10 mb-1.5">
+        <div className="h-1 rounded-full bg-white/10 mb-1.5">
           <div className={'h-1 rounded-full transition-all ' + barColor} style={{ width: (value * 10) + '%' }} />
         </div>
         {coachTip && <p className={'text-xs opacity-70 ' + coachColor}>{coachTip}</p>}
@@ -637,12 +637,12 @@ export default function ProfilePage() {
                         <p className={'text-sm leading-relaxed mb-4 ' + cfg.text}>{log.content}</p>
 
                         {s && m1key && m2key ? (
-                          <div className="rounded-lg p-3 bg-black bg-opacity-20 border border-white border-opacity-5 space-y-4">
+                          <div className="rounded-lg p-3 bg-black/20 border border-white/5 space-y-4">
                             <div className="flex gap-6">
                               <ScoreBar label={s._metric1_label} value={s[m1key]} coachTip={m1coach ? s[m1coach] : null} barColor={cfg.bar} coachColor={cfg.coach} />
                               <ScoreBar label={s._metric2_label} value={s[m2key]} coachTip={m2coach ? s[m2coach] : null} barColor={cfg.bar} coachColor={cfg.coach} />
                             </div>
-                            <p className={'text-xs italic opacity-50 pt-1 border-t border-white border-opacity-5 ' + cfg.text}>"{s.one_line_insight}"</p>
+                            <p className={'text-xs italic opacity-50 pt-1 border-t border-white/5 ' + cfg.text}>"{s.one_line_insight}"</p>
                           </div>
                         ) : log._scoring ? (
                           <div className="text-xs opacity-30 italic">Analyzing...</div>
