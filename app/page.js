@@ -75,7 +75,7 @@ export default function Home() {
       <footer className="max-w-2xl w-full mx-auto px-4 pb-8 flex items-center justify-between text-sm">
         <span className="text-gray-400">Paradyx</span>
         <div className="flex gap-4">
-          <a href="https://github.com/ArvinPurbager/devtrack" target="_blank" rel="noopener noreferrer" className="text-gray-300 hover:text-white">
+          <a href="https://github.com/ArvinPurbager/paradyx" target="_blank" rel="noopener noreferrer" className="text-gray-300 hover:text-white">
             GitHub
           </a>
           <a href="mailto:arvin@bu.edu" className="text-gray-300 hover:text-white">

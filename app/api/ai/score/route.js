@@ -90,7 +90,7 @@ Scoring:
 - ${guide.metric1.coach_key}: ${guide.metric1_coach}. Max 12 words. Encouraging not critical.
 - ${guide.metric2.key}: ${guide.metric2_desc}
 - ${guide.metric2.coach_key}: ${guide.metric2_coach}. Max 12 words. Encouraging not critical.
-- one_line_insight: Specific and honest. Not generic praise.
+- one_line_insight: Specific and honest. Not generic praise. If the content does not match the entry type (e.g. a finished fix logged as a struggle, or a plain report logged as a decision), call out the mismatch here.
 - If score is 8+, coaching tip should affirm what they did well.`
 
   try {
@@ -104,6 +104,7 @@ Scoring:
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 400,
+        temperature: 0,
         messages: [{ role: 'user', content: prompt }],
       }),
     })
