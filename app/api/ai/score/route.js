@@ -91,7 +91,8 @@ Scoring:
 - ${guide.metric2.key}: ${guide.metric2_desc}
 - ${guide.metric2.coach_key}: ${guide.metric2_coach}. Max 12 words. Encouraging not critical.
 - one_line_insight: Specific and honest. Not generic praise. If the content does not match the entry type (e.g. a finished fix logged as a struggle, or a plain report logged as a decision), call out the mismatch here.
-- If score is 8+, coaching tip should affirm what they did well.`
+- If score is 8+, coaching tip should affirm what they did well.
+- IMPORTANT: If the content does not genuinely match the entry type (e.g. a finished fix logged as a struggle, or a plain status update logged as a decision), cap BOTH metric scores at 4 or below, no matter how well-written it is. A mislabeled entry cannot score highly.`
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
